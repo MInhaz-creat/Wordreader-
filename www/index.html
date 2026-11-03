@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Word Reader</title>
+<style>
+:root{--bg:#faf8f3;--fg:#222;--ac:#2a6f4e;--card:#fff;--bd:#e3dfd3}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg)}
+header{position:sticky;top:0;background:var(--ac);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px;z-index:5}
+header h1{font-size:18px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button{font:inherit;cursor:pointer}
+.hb{background:transparent;border:0;color:#fff;font-size:22px;padding:0 6px}
+main{padding:14px;padding-bottom:110px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.card h3{margin:0 0 4px;font-size:16px}
+.card p{margin:0;color:#666;font-size:13px}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+#text{font-family:Georgia,serif;font-size:19px;line-height:1.85}
+#text p{margin:0 0 16px}
+.w.hl{background:#ffe29a;border-radius:3px}
+label{display:block;font-size:13px;color:#555;margin:8px 0 3px}
+input,textarea{width:100%;padding:9px;border:1px solid #ccc;border-radius:8px;font:inherit;font-size:15px}
+.btn{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:9px 14px;margin-top:10px}
+.btn.red{background:#b3402f;padding:6px 10px;margin:0;font-size:13px}
+#selbar{position:fixed;left:0;right:0;bottom:18px;text-align:center;z-index:8}
+#selbar button{background:#1f3d5c;color:#fff;border:0;border-radius:24px;padding:12px 22px;font-size:16px;box-shadow:0 2px 10px #0006}
+#sheet{position:fixed;left:0;right:0;bottom:0;max-height:78vh;overflow:auto;background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -4px 24px #0005;padding:16px 16px 28px;display:none;z-index:10}
+#close{float:right;background:#eee;border:0;border-radius:50%;width:32px;height:32px;font-size:16px}
+#sheet h2{margin:0 0 8px;font-size:22px}
+#sheet h2 small{font-size:13px;color:#777;font-weight:normal}
+.sec{margin:10px 0}
+.sec b{display:block;color:var(--ac);font-size:13px;margin-bottom:2px}
+.sec p{margin:0;font-size:16px;line-height:1.5}
+.sense{border-left:3px solid var(--ac);padding:4px 10px;margin:8px 0;background:#f4f9f6;border-radius:4px}
+.ex{font-style:italic;color:#333}
+.err{color:#b3402f}
+.muted{color:#888;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <button class="hb" id="back" hidden>←</button>
+  <h1 id="title">Word Reader</h1>
+  <button class="hb" id="gear">⚙</button>
+</header>
+<main>
+  <section id="vList"></section>
+  <section id="vRead" hidden><div id="text"></div></section>
+  <section id="vSet" hidden>
+    <div class="card">
+      <h3>Gemini সেটিংস</h3>
+      <label>API key (শুধু এই ফোনে সেভ থাকবে)</label>
+      <input id="key" type="password" autocomplete="off">
+      <label>মডেলের নাম (বন্ধ হয়ে গেলে এখানে বদলান)</label>
+      <input id="model">
+      <button class="btn" id="saveSet">সেভ করুন</button>
+      <p class="muted" id="setMsg"></p>
+    </div>
+    <div class="card">
+      <h3>নিজের আর্টিকেল যোগ করুন</h3>
+      <label>শিরোনাম</label>
+      <input id="nt">
+      <label>লেখা</label>
+      <textarea id="nb" rows="8"></textarea>
+      <button class="btn" id="addArt">অফলাইনে সেভ করুন</button>
+    </div>
+    <div id="mine"></div>
+  </section>
+</main>
+
+<div id="selbar" hidden><button id="selbtn">বাক্য ব্যাখ্যা করো</button></div>
+<div id="sheet"><button id="close">✕</button><div id="sc"></div></div>
+
+<script>
+const ARTICLES = [
+  { id: 's1', title: 'The Lost Umbrella', text:
+`Rafi left home in a hurry on Monday morning. The sky was grey, but he did not take his umbrella because he thought the rain would hold off.
+
+By noon, heavy drops began to hammer the streets. Rafi stood under a shop awning, soaked and annoyed. An old woman beside him smiled and offered to share her umbrella.
+
+They walked together until the rain eased. Rafi realised that a small act of kindness can brighten even the gloomiest day.` },
+  { id: 's2', title: 'A Quiet Village Market', text:
+`Every Friday, the village comes alive with the bustle of the weekly market. Farmers arrive at dawn, carrying baskets of fresh vegetables and fruit.
+
+Children weave between the stalls, chasing one another and begging their parents for sweets. The air is thick with the smell of spices and frying snacks.
+
+By evening, the vendors pack up what remains and head home, tired but content. The empty field falls silent until the next week.` },
+  { id: 's3', title: 'Learning Something New', text:
+`Learning a new language is not a race. Some days you will feel confident, and on other days every sentence seems to slip through your fingers.
+
+The secret is to stay consistent. Reading a little every day exposes you to new words, and over time those words begin to feel familiar.
+
+Do not be afraid of making mistakes. Each mistake shows you exactly what you still need to practise.` }
+];
+
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+};
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let custom = store.get('custom', []);
+const allArticles = () => ARTICLES.concat(custom);
+
+/* ---------- views ---------- */
+function show(v, title) {
+  ['vList', 'vRead', 'vSet'].forEach(id => $('#' + id).hidden = id !== v);
+  $('#back').hidden = v === 'vList';
+  $('#gear').hidden = v === 'vSet';
+  $('#title').textContent = title || 'Word Reader';
+  closeSheet();
+  $('#selbar').hidden = true;
+  window.scrollTo(0, 0);
+}
+
+function renderList() {
+  const box = $('#vList');
+  box.innerHTML = '';
+  allArticles().forEach(a => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    const words = a.text.split(/\s+/).length;
+    d.innerHTML = `<h3>${esc(a.title)}</h3><p>${words} শব্দ${a.id.startsWith('c') ? ' · আপনার সেভ করা' : ''}</p>`;
+    d.onclick = () => openArticle(a);
+    box.appendChild(d);
+  });
+}
+
+function openArticle(a) {
+  const t = $('#text');
+  t.innerHTML = '';
+  a.text.split(/\n\s*\n/).forEach(par => {
+    const p = document.createElement('p');
+    const re = /([A-Za-z]+(?:['’-][A-Za-z]+)*)|([^A-Za-z]+)/g;
+    let m;
+    while ((m = re.exec(par))) {
+      if (m[1]) {
+        const s = document.createElement('span');
+        s.className = 'w';
+        s.textContent = m[1];
+        p.appendChild(s);
+      } else p.appendChild(document.createTextNode(m[2]));
+    }
+    t.appendChild(p);
+  });
+  show('vRead', a.title);
+}
+
+function renderMine() {
+  const box = $('#mine');
+  box.innerHTML = '';
+  custom.forEach(a => {
+    const d = document.createElement('div');
+    d.className = 'card row';
+    d.innerHTML = `<span>${esc(a.title)}</span>`;
+    const b = document.createElement('button');
+    b.className = 'btn red';
+    b.textContent = 'মুছুন';
+    b.onclick = () => { custom = custom.filter(x => x.id !== a.id); store.set('custom', custom); renderMine(); renderList(); };
+    d.appendChild(b);
+    box.appendChild(d);
+  });
+}
+
+$('#back').onclick = () => show('vList');
+$('#gear').onclick = () => {
+  $('#key').value = store.get('key', '');
+  $('#model').value = store.get('model', 'gemini-2.5-flash');
+  renderMine();
+  show('vSet', 'সেটিংস');
+};
+$('#saveSet').onclick = () => {
+  store.set('key', $('#key').value.trim());
+  store.set('model', $('#model').value.trim() || 'gemini-2.5-flash');
+  $('#setMsg').textContent = 'সেভ হয়েছে।';
+};
+$('#addArt').onclick = () => {
+  const t = $('#nt').value.trim(), b = $('#nb').value.trim();
+  if (!t || !b) return;
+  custom.push({ id: 'c' + Date.now(), title: t, text: b });
+  if (!store.set('custom', custom)) { custom.pop(); alert('জায়গা শেষ, সেভ হয়নি।'); return; }
+  $('#nt').value = ''; $('#nb').value = '';
+  renderMine(); renderList();
+};
+
+/* ---------- bottom sheet ---------- */
+let sheetOpen = false;
+function openSheet(html) { $('#sc').innerHTML = html; $('#sheet').style.display = 'block'; $('#sheet').scrollTop = 0; sheetOpen = true; }
+function closeSheet() { $('#sheet').style.display = 'none'; sheetOpen = false; document.querySelectorAll('.w.hl').forEach(e => e.classList.remove('hl')); }
+$('#close').onclick = closeSheet;
+
+/* ---------- Gemini ---------- */
+async function gemini(prompt) {
+  const key = store.get('key', '');
+  if (!key) throw new Error('আগে ⚙ সেটিংসে গিয়ে Gemini API key দিন।');
+  const model = store.get('model', 'gemini-2.5-flash');
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+    })
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+  const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+  const txt = parts.map(p => p.text || '').join('').replace(/^```json\s*|```\s*$/g, '').trim();
+  return JSON.parse(txt);
+}
+
+function errMsg(e, cached) {
+  const offline = !navigator.onLine || /Failed to fetch|NetworkError|Load failed/i.test(e.message);
+  return `<p class="err">${offline ? 'ইন্টারনেট নেই, আর এটি আগে সেভ করা নেই।' : esc(e.message)}</p>`;
+}
+
+/* ---------- word lookup ---------- */
+function wordPrompt(w, ctx) {
+  return `You are an English-Bangla dictionary for a Bangla-speaking learner of English.
+Word: "${w}"
+It appeared in this sentence: "${ctx}"
+Return ONLY a JSON object with exactly these keys:
+{"word":"dictionary base form","pos":"part of speech","pronunciation":"IPA",
+"en_def":"clear simple English definition of the sense used in the sentence",
+"bn_def":"ঐ সংজ্ঞাটি বাংলায় ব্যাখ্যা করে লিখুন",
+"bn_meanings":["শাব্দিক বাংলা অর্থ ১","শাব্দিক বাংলা অর্থ ২"],
+"senses":[{"pos":"","bn":"বাংলা অর্থ","en":"short English definition","example":"English example sentence","example_bn":"উদাহরণের বাংলা অনুবাদ"}]}
+"senses" must list every common meaning of the word (just one item if it has only one). Bangla text must be in Bangla script.`;
+}
+
+function renderWord(d) {
+  let h = `<h2>${esc(d.word)} <small>${esc(d.pos)} ${esc(d.pronunciation)}</small></h2>`;
+  h += `<div class="sec"><b>English definition</b><p>${esc(d.en_def)}</p></div>`;
+  h += `<div class="sec"><b>বাংলা সংজ্ঞা</b><p>${esc(d.bn_def)}</p></div>`;
+  h += `<div class="sec"><b>শাব্দিক অর্থ</b><p>${(d.bn_meanings || []).map(esc).join(', ')}</p></div>`;
+  if ((d.senses || []).length) {
+    h += `<div class="sec"><b>সব অর্থ ও উদাহরণ</b>`;
+    d.senses.forEach(s => {
+      h += `<div class="sense"><p><b style="display:inline">${esc(s.bn)}</b> <span class="muted">${esc(s.pos)}</span></p>
+      <p class="muted">${esc(s.en)}</p>
+      <p class="ex">${esc(s.example)}</p><p class="muted">${esc(s.example_bn)}</p></div>`;
+    });
+    h += `</div>`;
+  }
+  return h;
+}
+
+async function lookupWord(w, ctx) {
+  const k = 'w:' + w.toLowerCase();
+  const cached = store.get(k, null);
+  if (cached) { openSheet(renderWord(cached)); return; }
+  openSheet(`<h2>${esc(w)}</h2><p class="muted">খুঁজছি…</p>`);
+  try {
+    const d = await gemini(wordPrompt(w, ctx));
+    store.set(k, d);
+    openSheet(renderWord(d));
+  } catch (e) {
+    openSheet(`<h2>${esc(w)}</h2>` + errMsg(e));
+  }
+}
+
+function sentenceAt(p, offset) {
+  const t = p.textContent;
+  let s = offset; while (s > 0 && !/[.!?]/.test(t[s - 1])) s--;
+  let e = offset; while (e < t.length && !/[.!?]/.test(t[e])) e++;
+  return t.slice(s, e + 1).trim();
+}
+
+$('#text').addEventListener('click', e => {
+  if (window.getSelection().toString().trim()) return;
+  const w = e.target.closest('.w');
+  if (!w) return;
+  document.querySelectorAll('.w.hl').forEach(x => x.classList.remove('hl'));
+  w.classList.add('hl');
+  const p = w.parentNode;
+  let off = 0;
+  for (const n of p.childNodes) { if (n === w) break; off += n.textContent.length; }
+  lookupWord(w.textContent, sentenceAt(p, off));
+});
+
+/* ---------- sentence explanation ---------- */
+let lastSel = '', hideTimer = null;
+document.addEventListener('selectionchange', () => {
+  const s = window.getSelection();
+  const t = s.toString().trim();
+  const inText = s.rangeCount > 0 && $('#text').contains(s.anchorNode);
+  if (inText && t.split(/\s+/).length >= 2) {
+    lastSel = t;
+    clearTimeout(hideTimer);
+    $('#selbar').hidden = false;
+  } else {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => { if (!sheetOpen) $('#selbar').hidden = true; }, 600);
+  }
+});
+
+function sentPrompt(t) {
+  return `You are an English grammar teacher for a Bangla-speaking learner.
+Explain this English text: "${t}"
+Return ONLY a JSON object with exactly these keys:
+{"bn":"স্বাভাবিক বাংলা অনুবাদ",
+"structure":"বাক্যের গঠন বাংলায় ব্যাখ্যা করুন (Subject, Verb, Object, Clause ইত্যাদি চিহ্নিত করে)",
+"parts":[{"text":"English chunk from the text","role":"এই অংশের ভূমিকা বাংলায়"}],
+"tense":"Tense এর নাম ও বাংলা ব্যাখ্যা (প্রযোজ্য না হলে খালি রাখুন)",
+"grammar":["উল্লেখযোগ্য grammar point বাংলায় ব্যাখ্যা"]}
+Bangla text must be in Bangla script. If the text is a fragment, say so in "structure".`;
+}
+
+function renderSent(t, d) {
+  let h = `<h2 style="font-size:17px;font-weight:normal;font-style:italic">${esc(t)}</h2>`;
+  h += `<div class="sec"><b>বাংলা অনুবাদ</b><p>${esc(d.bn)}</p></div>`;
+  h += `<div class="sec"><b>বাক্যের গঠন</b><p>${esc(d.structure)}</p></div>`;
+  if ((d.parts || []).length) {
+    h += `<div class="sec"><b>অংশ ভাগ করে</b>` + d.parts.map(p => `<div class="sense"><p class="ex">${esc(p.text)}</p><p>${esc(p.role)}</p></div>`).join('') + `</div>`;
+  }
+  if (d.tense) h += `<div class="sec"><b>Tense</b><p>${esc(d.tense)}</p></div>`;
+  if ((d.grammar || []).length) {
+    h += `<div class="sec"><b>Grammar পয়েন্ট</b>` + d.grammar.map(g => `<p>• ${esc(g)}</p>`).join('') + `</div>`;
+  }
+  return h;
+}
+
+$('#selbtn').addEventListener('click', async () => {
+  const t = lastSel;
+  if (!t) return;
+  $('#selbar').hidden = true;
+  window.getSelection().removeAllRanges();
+  const k = 's:' + t;
+  const cached = store.get(k, null);
+  if (cached) { openSheet(renderSent(t, cached)); return; }
+  openSheet(`<p class="muted">ব্যাখ্যা তৈরি হচ্ছে…</p>`);
+  try {
+    const d = await gemini(sentPrompt(t));
+    store.set(k, d);
+    openSheet(renderSent(t, d));
+  } catch (e) {
+    openSheet(errMsg(e));
+  }
+});
+
+renderList();
+show('vList');
+</script>
+</body>
+</html>
